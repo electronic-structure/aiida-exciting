@@ -1,19 +1,16 @@
-
 """
 This module manages the LAPW species files in the local repository.
 """
+
 from aiida.orm.data.singlefile import SinglefileData
 from aiida.common.utils import classproperty
-import re
 
-__copyright__ = u"Copyright (c), 2015, ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE (Theory and Simulation of Materials (THEOS) and National Centre for Computational Design and Discovery of Novel Materials (NCCR MARVEL)), Switzerland and ROBERT BOSCH LLC, USA. All rights reserved."
-__license__ = "MIT license, see LICENSE.txt file"
-__version__ = "0.4.1"
-__contributors__ = "Andrea Cepellotti, Giovanni Pizzi, Riccardo Sabatini"
-
-LAPWBASIAGROUP_TYPE = 'data.lapwbasis.family'
+LAPWBASIS_GROUP_TYPE = 'data.lapwbasis.family'
 
 def parse_species_file(filename, fmt):
+    """
+    Parse xml or json species file
+    """
     properties = {}
     if fmt == 'xml':
         from xml.dom.minidom import parse
@@ -33,7 +30,7 @@ def upload_family(folder, group_name, group_description,
     Upload a set of LAPW species files in a given group.
     
     :param folder: a path containing all LAPW species files to be added.
-        Only files ending in .xml (case-insensitive) are considered.
+        Only files ending in .xml or .json (case-insensitive) are considered.
     :param group_name: the name of the group to create. If it exists and is
         non-empty, a UniquenessError is raised.
     :param group_description: a string to be set as the group description.
@@ -54,28 +51,25 @@ def upload_family(folder, group_name, group_description,
     if not os.path.isdir(folder):
         raise ValueError("folder must be a directory")
 
-    # only files, and only those ending with .xml or .XML
+    # only files, and only those ending with .xml or .XML or .json or .JSON
     # go to the real file if it is a symlink
-    files = [os.path.realpath(os.path.join(folder, i))
-             for i in os.listdir(folder) if
-             os.path.isfile(os.path.join(folder, i)) and
-             i.lower().endswith('.'+fmt)]
+    files = [os.path.realpath(os.path.join(folder, i)) for i in os.listdir(folder) if
+             os.path.isfile(os.path.join(folder, i)) and i.lower().endswith('.'+fmt)]
 
     nfiles = len(files)
 
     try:
-        group = Group.get(name=group_name, type_string=LAPWBASIAGROUP_TYPE)
+        group = Group.get(name=group_name, type_string=LAPWBASIS_GROUP_TYPE)
         group_created = False
     except NotExistent:
-        group = Group(name=group_name, type_string=LAPWBASIAGROUP_TYPE,
+        group = Group(name=group_name, type_string=LAPWBASIS_GROUP_TYPE,
                       user=get_automatic_user())
         group_created = True
 
     if group.user != get_automatic_user():
-        raise UniquenessError("There is already a LapwbasisFamily group with name {}"
+        raise UniquenessError("There is already a Lapwbasis group with name {}"
                               ", but it belongs to user {}, therefore you "
-                              "cannot modify it".format(group_name,
-                                                        group.user.email))
+                              "cannot modify it".format(group_name, group.user.email))
 
     # Always update description, even if the group already existed
     group.description = group_description
@@ -85,9 +79,8 @@ def upload_family(folder, group_name, group_description,
     if not group_created:
         for aiida_n in group.nodes:
             # Skip other nodes
-            if not isinstance(aiida_n, LapwbasisData):
-                continue
-            md5_list.append(aiida_n.md5)
+            if isinstance(aiida_n, LapwbasisData):
+                md5_list.append(aiida_n.md5)
 
     # NOTE: GROUP IS SAVED ONLY AFTER CHECKS OF UNICITY
     
@@ -106,11 +99,9 @@ def upload_family(folder, group_name, group_description,
     for sp, created in species_list:
         if created:
             sp.store()
-            aiidalogger.debug("New node {} created for file {}".format(
-                sp.uuid, sp.filename))
+            aiidalogger.debug("New node {} created for file {}".format(sp.uuid, sp.filename))
         else:
-            aiidalogger.debug("Reusing node {} for file {}".format(
-                sp.uuid, sp.filename))
+            aiidalogger.debug("Reusing node {} for file {}".format(sp.uuid, sp.filename))
 
     # Add elements to the group all togetehr
     group.add_nodes(sp for sp, created in species_list)
@@ -123,7 +114,7 @@ class LapwbasisData(SinglefileData):
 
     @classproperty
     def lapwbasisfamily_type_string(cls):
-        return LAPWBASIAGROUP_TYPE
+        return LAPWBASIS_GROUP_TYPE
 
     @property
     def chemical_symbol(self):
@@ -179,6 +170,11 @@ class LapwbasisData(SinglefileData):
         the species will not be found.
         """
         return list(cls.query(dbattributes__key='md5', dbattributes__tval=md5))
+    
+    @classmethod
+    def get_lapwbasis_group(cls, group_name):
+        from aiida.orm import Group
+        return Group.get(name=group_name, type_string=LAPWBASIS_GROUP_TYPE)
 
     @classmethod
     def get_lapwbasis_groups(cls, filter_elements=None, user=None):
